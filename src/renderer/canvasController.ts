@@ -478,6 +478,10 @@ export function generateCanvasStyles(): string {
         border-left: 3px solid #f38ba8;
     }
 
+    .code-block-wrapper.block-statevar {
+        border-left: 3px solid #fab387;
+    }
+
     /* External/unresolved function calls */
     .code-block-wrapper.block-function[id^="external-"] {
         border-left: 3px solid #f9e2af;

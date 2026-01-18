@@ -3,6 +3,7 @@ import { FunctionAnalyzer } from '../analyzer/functionAnalyzer';
 import { DiagramGenerator } from './diagramGenerator';
 import { TypeResolver } from '../analyzer/typeResolver';
 import { CallGraphBuilder } from '../analyzer/callGraphBuilder';
+import { StateVariableResolver } from '../analyzer/stateVariableResolver';
 import { SolidityParser } from '../parser/solidityParser';
 import { 
     FunctionAnalysis, 
@@ -12,7 +13,9 @@ import {
     ImportResponse,
     ParsedFile,
     StructInfo,
-    EnumInfo
+    EnumInfo,
+    StateVariableInfo,
+    ContractInfo
 } from '../types';
 
 export class SolidityDiagramProvider {
@@ -25,7 +28,9 @@ export class SolidityDiagramProvider {
     private parser: SolidityParser;
     private typeResolver: TypeResolver;
     private callGraphBuilder: CallGraphBuilder;
+    private stateVariableResolver: StateVariableResolver;
     private currentFilePath: string = '';
+    private currentContractName: string = '';
     private workspaceFilesCache: Map<string, ParsedFile> = new Map();
     private displayedBlocks: Set<string> = new Set();
 
@@ -38,6 +43,7 @@ export class SolidityDiagramProvider {
         this.parser = new SolidityParser();
         this.typeResolver = new TypeResolver(this.parser);
         this.callGraphBuilder = new CallGraphBuilder(this.parser);
+        this.stateVariableResolver = new StateVariableResolver(this.parser);
     }
 
     /**
@@ -103,6 +109,24 @@ export class SolidityDiagramProvider {
         this.currentFilePath = filePath;
         this.workspaceFilesCache = await this.getWorkspaceFiles();
         
+        // Find the contract containing this function and extract state variable names
+        const currentContract = this.stateVariableResolver.findContractForFunction(
+            analysis.function,
+            this.workspaceFilesCache
+        );
+        
+        if (currentContract) {
+            this.currentContractName = currentContract.name;
+            // Extract state variable names and pass to diagram generator
+            const stateVarNames = new Set(
+                currentContract.stateVariables.map(sv => sv.name)
+            );
+            this.diagramGenerator.setStateVariables(stateVarNames);
+        } else {
+            this.currentContractName = '';
+            this.diagramGenerator.setStateVariables(new Set());
+        }
+        
         // Track displayed blocks
         this.displayedBlocks = this.extractDisplayedBlocks(analysis);
 
@@ -157,6 +181,8 @@ export class SolidityDiagramProvider {
             
             if (request.kind === 'function') {
                 response = await this.resolveFunction(request, requestId);
+            } else if (request.kind === 'statevar') {
+                response = await this.resolveStateVariable(request, requestId);
             } else {
                 // 'struct' or 'enum' - we need to try both since we don't know which
                 response = await this.resolveType(request, requestId);
@@ -297,6 +323,56 @@ export class SolidityDiagramProvider {
     }
 
     /**
+     * Resolve a state variable definition and create block data
+     */
+    private async resolveStateVariable(request: ImportRequest, requestId: string): Promise<ImportResponse> {
+        const stateVar = this.stateVariableResolver.resolveStateVariable(
+            request.name,
+            this.currentContractName,
+            this.workspaceFilesCache
+        );
+        
+        if (!stateVar) {
+            return {
+                command: 'importResponse',
+                success: false,
+                requestId,
+                error: `State variable "${request.name}" not found in workspace`
+            };
+        }
+        
+        // Create block data for state variable
+        const blockId = `statevar-${stateVar.name}`;
+        const block: CodeBlockData = {
+            id: blockId,
+            title: stateVar.name,
+            subtitle: `${stateVar.visibility} ${stateVar.typeName}`,
+            sourceCode: stateVar.fullSource,
+            category: 'statevar',
+            filePath: stateVar.filePath,
+            startLine: stateVar.location.start.line,
+            position: { x: 0, y: 0 }
+        };
+        
+        // Create arrow
+        const arrow: ArrowData = {
+            id: `arrow-import-${Date.now()}`,
+            sourceBlockId: request.sourceBlockId,
+            sourceLine: request.sourceLine,
+            targetBlockId: blockId,
+            type: 'statevar'
+        };
+        
+        return {
+            command: 'importResponse',
+            success: true,
+            requestId,
+            block,
+            arrows: [arrow]
+        };
+    }
+
+    /**
      * Get a compact function signature
      */
     private getFunctionSignature(func: { parameters: Array<{ typeName: string; name?: string }>; returnParameters: Array<{ typeName: string }> }): string {
@@ -364,6 +440,21 @@ export class SolidityDiagramProvider {
 
         const analysis = await this.analyzer.analyze(sourceCode, filePath, position);
         if (analysis) {
+            // Refresh workspace files and state variables
+            this.workspaceFilesCache = await this.getWorkspaceFiles();
+            const currentContract = this.stateVariableResolver.findContractForFunction(
+                analysis.function,
+                this.workspaceFilesCache
+            );
+            
+            if (currentContract) {
+                this.currentContractName = currentContract.name;
+                const stateVarNames = new Set(
+                    currentContract.stateVariables.map(sv => sv.name)
+                );
+                this.diagramGenerator.setStateVariables(stateVarNames);
+            }
+            
             this.currentPanel.title = `Diagram: ${analysis.function.name}`;
             this.currentPanel.webview.html = this.getWebviewContent(analysis);
         }

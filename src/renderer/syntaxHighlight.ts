@@ -48,6 +48,7 @@ export interface HighlightOptions {
     displayedBlocks?: Set<string>;  // Already displayed block names (to avoid making them clickable)
     enableImport?: boolean;     // Whether to enable Cmd+Click import on tokens
     variableTypes?: Map<string, string>;  // Map of variable names to their type names
+    stateVariables?: Set<string>;  // Set of state variable names that can be imported
 }
 
 export class SyntaxHighlighter {
@@ -310,21 +311,35 @@ export class SyntaxHighlighter {
                         result += `<span class="token-type">${this.escapeHtml(word)}</span>`;
                     }
                 } else {
-                    // Check if this variable has a known struct/enum type
-                    const varType = this.variableTypes.get(word);
-                    const isImportableVar = enableImport && 
-                        varType && 
-                        !displayedBlocks.has(`struct-${varType}`) &&
-                        !displayedBlocks.has(`enum-${varType}`) &&
-                        !this.isBuiltInType(varType);
+                    // Check if this is a state variable reference
+                    const stateVariables = this.currentOptions.stateVariables ?? new Set<string>();
+                    const isStateVar = stateVariables.has(word);
+                    const isStateVarImportable = enableImport && 
+                        isStateVar && 
+                        !displayedBlocks.has(`statevar-${word}`);
                     
-                    if (isImportableVar && varType) {
+                    if (isStateVarImportable) {
                         result += `<span class="token-variable importable-token" ` +
-                            `data-importable="type" data-name="${this.escapeHtml(varType)}" ` +
+                            `data-importable="statevar" data-name="${this.escapeHtml(word)}" ` +
                             `data-line="${lineNumber}" data-block="${blockId}">` +
                             `${this.escapeHtml(word)}</span>`;
                     } else {
-                        result += `<span class="token-variable">${this.escapeHtml(word)}</span>`;
+                        // Check if this variable has a known struct/enum type
+                        const varType = this.variableTypes.get(word);
+                        const isImportableVar = enableImport && 
+                            varType && 
+                            !displayedBlocks.has(`struct-${varType}`) &&
+                            !displayedBlocks.has(`enum-${varType}`) &&
+                            !this.isBuiltInType(varType);
+                        
+                        if (isImportableVar && varType) {
+                            result += `<span class="token-variable importable-token" ` +
+                                `data-importable="type" data-name="${this.escapeHtml(varType)}" ` +
+                                `data-line="${lineNumber}" data-block="${blockId}">` +
+                                `${this.escapeHtml(word)}</span>`;
+                        } else {
+                            result += `<span class="token-variable">${this.escapeHtml(word)}</span>`;
+                        }
                     }
                 }
                 i = j;

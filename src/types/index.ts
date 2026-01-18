@@ -119,7 +119,10 @@ export interface StateVariableInfo {
     name: string;
     typeName: string;
     visibility: string;
+    fullSource: string;
     location: SourceLocation;
+    filePath: string;
+    contractName: string;
 }
 
 /**
@@ -160,7 +163,7 @@ export interface CodeBlockData {
     title: string;
     subtitle?: string;
     sourceCode: string;
-    category: 'main' | 'struct' | 'enum' | 'function';
+    category: 'main' | 'struct' | 'enum' | 'function' | 'statevar';
     filePath: string;
     startLine: number;
     position: { x: number; y: number };
@@ -175,7 +178,7 @@ export interface ArrowData {
     sourceLine: number;
     targetBlockId: string;
     targetLine?: number;
-    type: 'function' | 'struct' | 'enum';
+    type: 'function' | 'struct' | 'enum' | 'statevar';
     label?: string;
 }
 
@@ -185,7 +188,7 @@ export interface ArrowData {
 export interface ImportRequest {
     command: 'importRequest';
     name: string;
-    kind: 'function' | 'struct' | 'enum';
+    kind: 'function' | 'struct' | 'enum' | 'statevar';
     sourceBlockId: string;
     sourceLine: number;
 }

@@ -9,7 +9,7 @@ export interface ArrowDefinition {
     sourceLine: number;
     targetBlockId: string;
     targetLine?: number;
-    type: 'function' | 'struct' | 'enum';
+    type: 'function' | 'struct' | 'enum' | 'statevar';
     label?: string;
 }
 
@@ -52,6 +52,7 @@ export function generateArrowManagerScript(): string {
             this.defs.appendChild(this.createMarker('arrow-function', '#f38ba8'));
             this.defs.appendChild(this.createMarker('arrow-struct', '#89dceb'));
             this.defs.appendChild(this.createMarker('arrow-enum', '#a6e3a1'));
+            this.defs.appendChild(this.createMarker('arrow-statevar', '#fab387'));
 
             this.svg.appendChild(this.defs);
         }
@@ -246,7 +247,8 @@ export function generateArrowManagerScript(): string {
             const colors = {
                 'function': '#f38ba8',
                 'struct': '#89dceb',
-                'enum': '#a6e3a1'
+                'enum': '#a6e3a1',
+                'statevar': '#fab387'
             };
             path.setAttribute('stroke', colors[type] || '#888');
             path.setAttribute('opacity', '0.8');

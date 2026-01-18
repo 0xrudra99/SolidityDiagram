@@ -111,7 +111,7 @@ export class SolidityParser {
             } else if (subNode.type === 'EnumDefinition') {
                 enums.push(this.processEnum(subNode, sourceCode, lines, filePath, contractNode.name));
             } else if (subNode.type === 'StateVariableDeclaration') {
-                stateVariables.push(...this.processStateVariable(subNode, lines));
+                stateVariables.push(...this.processStateVariable(subNode, lines, filePath, contractNode.name));
             }
         }
 
@@ -208,12 +208,24 @@ export class SolidityParser {
         };
     }
 
-    private processStateVariable(node: any, lines: string[]): StateVariableInfo[] {
+    private processStateVariable(
+        node: any, 
+        lines: string[], 
+        filePath: string, 
+        contractName: string
+    ): StateVariableInfo[] {
+        // Extract the full source for the entire declaration (may span multiple lines)
+        const declLocation = this.extractLocation(node);
+        const fullSource = this.extractSource(declLocation, lines);
+        
         return (node.variables || []).map((v: any) => ({
             name: v.name,
             typeName: this.typeNameToString(v.typeName),
             visibility: v.visibility || 'internal',
-            location: this.extractLocation(v)
+            fullSource: fullSource.trim(),
+            location: this.extractLocation(v),
+            filePath,
+            contractName
         }));
     }
 

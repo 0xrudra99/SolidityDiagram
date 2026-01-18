@@ -107,18 +107,27 @@ export function generateImportManagerScript(): string {
 
         requestImport(token) {
             const name = token.dataset.name;
-            const importType = token.dataset.importable; // 'function' or 'type'
+            const importType = token.dataset.importable; // 'function', 'type', or 'statevar'
             const line = parseInt(token.dataset.line, 10);
             const blockId = token.dataset.block;
 
             // Check if already displayed
-            const targetId = importType === 'function' 
-                ? \`function-\${name}\` 
-                : \`struct-\${name}\`;
+            let targetId;
+            if (importType === 'function') {
+                targetId = \`function-\${name}\`;
+            } else if (importType === 'statevar') {
+                targetId = \`statevar-\${name}\`;
+            } else {
+                targetId = \`struct-\${name}\`;
+            }
             
-            if (this.displayedBlocks.has(targetId) || this.displayedBlocks.has(\`enum-\${name}\`)) {
+            if (this.displayedBlocks.has(targetId) || 
+                this.displayedBlocks.has(\`enum-\${name}\`) ||
+                this.displayedBlocks.has(\`statevar-\${name}\`)) {
                 // Already imported - briefly highlight the existing block
-                this.highlightExistingBlock(targetId) || this.highlightExistingBlock(\`enum-\${name}\`);
+                this.highlightExistingBlock(targetId) || 
+                    this.highlightExistingBlock(\`enum-\${name}\`) ||
+                    this.highlightExistingBlock(\`statevar-\${name}\`);
                 token.classList.add('already-imported');
                 setTimeout(() => token.classList.remove('already-imported'), 1000);
                 return;
@@ -134,11 +143,21 @@ export function generateImportManagerScript(): string {
             token.classList.add('loading');
             this.pendingImports.set(pendingKey, { token, sourceBlockId: blockId, sourceLine: line });
 
+            // Determine the kind for the import request
+            let kind;
+            if (importType === 'function') {
+                kind = 'function';
+            } else if (importType === 'statevar') {
+                kind = 'statevar';
+            } else {
+                kind = 'struct'; // 'type' becomes 'struct' for resolution
+            }
+
             // Send import request to extension
             vscode.postMessage({
                 command: 'importRequest',
                 name: name,
-                kind: importType === 'function' ? 'function' : 'struct', // 'type' becomes 'struct' for resolution
+                kind: kind,
                 sourceBlockId: blockId,
                 sourceLine: line
             });
@@ -254,7 +273,7 @@ export function generateImportManagerScript(): string {
                 if (blockData.category === 'function') {
                     x = sourceX + sourceWidth + 50;
                 } else {
-                    // Structs/enums go to the left
+                    // Structs/enums/statevars go to the left
                     x = sourceX - 400;
                     if (x < 50) x = sourceX + sourceWidth + 50;
                 }

@@ -18,7 +18,7 @@ interface CodeBlock {
     title: string;
     subtitle?: string;
     sourceCode: string;
-    category: 'main' | 'struct' | 'enum' | 'function';
+    category: 'main' | 'struct' | 'enum' | 'function' | 'statevar';
     filePath: string;
     startLine: number;
     position: { x: number; y: number };
@@ -27,10 +27,20 @@ interface CodeBlock {
 export class DiagramGenerator {
     private highlighter: SyntaxHighlighter;
     private displayedBlocks: Set<string>;
+    private stateVariableNames: Set<string>;
 
     constructor() {
         this.highlighter = new SyntaxHighlighter();
         this.displayedBlocks = new Set();
+        this.stateVariableNames = new Set();
+    }
+
+    /**
+     * Set the state variable names for the current contract.
+     * These will be marked as importable in the highlighted code.
+     */
+    setStateVariables(names: Set<string>): void {
+        this.stateVariableNames = names;
     }
 
     /**
@@ -340,7 +350,8 @@ export class DiagramGenerator {
             blockId: block.id,
             startLineNumber: block.startLine,
             displayedBlocks: this.displayedBlocks,
-            enableImport: true  // Enable Cmd+Click import on tokens
+            enableImport: true,  // Enable Cmd+Click import on tokens
+            stateVariables: this.stateVariableNames  // Pass state variable names for import
         });
         
         const categoryClass = `block-${block.category}`;
