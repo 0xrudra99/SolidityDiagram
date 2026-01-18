@@ -1,0 +1,53 @@
+{
+  "name": "solidity-diagram",
+  "displayName": "Solidity Function Diagram",
+  "description": "Generate interactive diagrams showing function dependencies, data structures, and inner function calls for Solidity code",
+  "version": "0.0.1",
+  "publisher": "solidity-diagram",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Visualization",
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:solidity"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "solidity-diagram.generateDiagram",
+        "title": "Generate Function Diagram"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "solidity-diagram.generateDiagram",
+          "when": "editorLangId == solidity",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "eslint": "^8.54.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "@solidity-parser/parser": "^0.18.0",
+    "shiki": "^1.0.0"
+  }
+}
