@@ -2,6 +2,8 @@
 
 A VS Code extension that generates interactive diagrams showing function dependencies, data structures, and inner function calls for Solidity smart contracts.
 
+![Function Diagram Example](screenshot/Screenshot%202026-01-19%20at%206.17.47%20PM.png)
+
 ## Features
 
 - **Function Visualization**: Right-click on any Solidity function to generate a visual diagram
