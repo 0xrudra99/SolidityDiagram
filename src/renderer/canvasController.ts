@@ -888,5 +888,176 @@ export function generateCanvasStyles(): string {
         margin-right: 4px;
         font-family: inherit;
     }
+
+    /* ============ Interface Call Highlighting ============ */
+
+    .interface-call {
+        color: #fab387 !important;
+        border-bottom-style: dashed !important;
+    }
+
+    .interface-call:hover {
+        background: rgba(250, 179, 135, 0.15) !important;
+    }
+
+    /* ============ Implementation Picker ============ */
+
+    .implementation-picker {
+        position: fixed;
+        min-width: 400px;
+        max-width: 600px;
+        max-height: 400px;
+        background: rgba(22, 27, 34, 0.98);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 12px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+        z-index: 3000;
+        display: none;
+        overflow: hidden;
+        backdrop-filter: blur(12px);
+    }
+
+    .implementation-picker.visible {
+        display: block;
+    }
+
+    .picker-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 16px;
+        background: rgba(33, 38, 45, 0.95);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .picker-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: #c9d1d9;
+    }
+
+    .picker-close {
+        width: 24px;
+        height: 24px;
+        background: transparent;
+        border: none;
+        color: #6e7681;
+        font-size: 18px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 4px;
+        transition: all 0.15s ease;
+    }
+
+    .picker-close:hover {
+        background: rgba(243, 139, 168, 0.2);
+        color: #f38ba8;
+    }
+
+    .picker-body {
+        max-height: 340px;
+        overflow-y: auto;
+        padding: 8px;
+    }
+
+    .picker-item {
+        padding: 12px 14px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        margin-bottom: 4px;
+        border: 1px solid transparent;
+    }
+
+    .picker-item:hover {
+        background: rgba(88, 166, 255, 0.1);
+        border-color: rgba(88, 166, 255, 0.2);
+    }
+
+    .picker-item:last-child {
+        margin-bottom: 0;
+    }
+
+    .picker-item-main {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 4px;
+    }
+
+    .picker-item-contract {
+        font-size: 14px;
+        font-weight: 600;
+        color: #58a6ff;
+    }
+
+    .picker-item-kind {
+        font-size: 10px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .picker-item-kind.contract {
+        background: rgba(166, 227, 161, 0.15);
+        color: #a6e3a1;
+    }
+
+    .picker-item-kind.abstract {
+        background: rgba(203, 166, 247, 0.15);
+        color: #cba6f7;
+    }
+
+    .picker-item-kind.library {
+        background: rgba(137, 220, 235, 0.15);
+        color: #89dceb;
+    }
+
+    .picker-item-details {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 2px;
+    }
+
+    .picker-item-signature {
+        font-size: 12px;
+        font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+        color: #8b949e;
+    }
+
+    .picker-item-inherited {
+        font-size: 10px;
+        padding: 2px 6px;
+        background: rgba(250, 179, 135, 0.15);
+        color: #fab387;
+        border-radius: 4px;
+    }
+
+    .picker-item-path {
+        font-size: 11px;
+        color: #6e7681;
+    }
+
+    /* Picker scrollbar */
+    .picker-body::-webkit-scrollbar {
+        width: 8px;
+    }
+
+    .picker-body::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    .picker-body::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 4px;
+    }
+
+    .picker-body::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.25);
+    }
     `;
 }

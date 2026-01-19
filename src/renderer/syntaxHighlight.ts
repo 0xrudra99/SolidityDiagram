@@ -212,6 +212,9 @@ export class SyntaxHighlighter {
         const enableImport = this.currentOptions.enableImport ?? false;
         const displayedBlocks = this.currentOptions.displayedBlocks ?? new Set<string>();
         const enableDataFlow = this.currentOptions.enableDataFlow ?? false;
+        
+        // Pre-detect interface calls for this line
+        const interfaceCalls = this.detectInterfaceCalls(line);
 
         while (i < line.length) {
             // Check for special globals: msg.value, msg.sender, block.timestamp, etc.
@@ -303,18 +306,32 @@ export class SyntaxHighlighter {
                 } else if (SOLIDITY_MODIFIERS.has(word)) {
                     result += `<span class="token-modifier">${this.escapeHtml(word)}</span>`;
                 } else if (line[j] === '(') {
-                    // Function call - make it importable if enabled
-                    const isImportable = enableImport && 
-                        !displayedBlocks.has(`function-${word}`) &&
-                        !this.isBuiltInFunction(word);
+                    // Check if this is an interface call method (e.g., the "transfer" in "IERC20(token).transfer(...)")
+                    const interfaceCallMatch = interfaceCalls.find(
+                        ic => ic.methodPos === i && ic.methodName === word
+                    );
                     
-                    if (isImportable) {
-                        result += `<span class="token-function importable-token" ` +
-                            `data-importable="function" data-name="${this.escapeHtml(word)}" ` +
+                    if (interfaceCallMatch && enableImport) {
+                        // Interface method call - make it importable with interface info
+                        result += `<span class="token-function interface-call importable-token" ` +
+                            `data-importable="interface-call" data-name="${this.escapeHtml(word)}" ` +
+                            `data-interface="${this.escapeHtml(interfaceCallMatch.interfaceName)}" ` +
                             `data-line="${lineNumber}" data-block="${blockId}">` +
                             `${this.escapeHtml(word)}</span>`;
                     } else {
-                        result += `<span class="token-function">${this.escapeHtml(word)}</span>`;
+                        // Regular function call - make it importable if enabled
+                        const isImportable = enableImport && 
+                            !displayedBlocks.has(`function-${word}`) &&
+                            !this.isBuiltInFunction(word);
+                        
+                        if (isImportable) {
+                            result += `<span class="token-function importable-token" ` +
+                                `data-importable="function" data-name="${this.escapeHtml(word)}" ` +
+                                `data-line="${lineNumber}" data-block="${blockId}">` +
+                                `${this.escapeHtml(word)}</span>`;
+                        } else {
+                            result += `<span class="token-function">${this.escapeHtml(word)}</span>`;
+                        }
                     }
                 } else if (word[0] === word[0].toUpperCase() && word[0] !== '_') {
                     // Likely a type (struct, enum, contract) - make it importable if enabled
@@ -407,6 +424,64 @@ export class SyntaxHighlighter {
         }
 
         return result;
+    }
+
+    /**
+     * Detect interface call patterns in a line: InterfaceName(address).method(...)
+     * Returns array of { interfaceName, methodName, methodPos }
+     */
+    private detectInterfaceCalls(line: string): Array<{ interfaceName: string; methodName: string; methodPos: number }> {
+        const results: Array<{ interfaceName: string; methodName: string; methodPos: number }> = [];
+        
+        // Pattern: InterfaceName(anything).methodName(
+        // Captures: InterfaceName, methodName, and position of methodName
+        const pattern = /\b([A-Z][a-zA-Z0-9_]*)\s*\([^)]*\)\s*\.\s*([a-z][a-zA-Z0-9_]*)\s*\(/g;
+        
+        let match;
+        while ((match = pattern.exec(line)) !== null) {
+            const interfaceName = match[1];
+            const methodName = match[2];
+            
+            // Calculate position of method name in the original line
+            // Find where methodName starts after the "."
+            const fullMatch = match[0];
+            const dotIndex = fullMatch.lastIndexOf('.');
+            const afterDot = fullMatch.substring(dotIndex + 1);
+            const methodStartInMatch = afterDot.indexOf(methodName);
+            const methodPos = match.index + dotIndex + 1 + methodStartInMatch;
+            
+            // Only count if it looks like an interface
+            if (this.looksLikeInterface(interfaceName)) {
+                results.push({
+                    interfaceName,
+                    methodName,
+                    methodPos
+                });
+            }
+        }
+        
+        return results;
+    }
+
+    /**
+     * Check if a type name looks like an interface
+     */
+    private looksLikeInterface(name: string): boolean {
+        // Common interface prefixes
+        if (/^I[A-Z]/.test(name)) return true;
+        
+        // Known interface-like patterns
+        const interfaceLikePatterns = [
+            'IERC20', 'IERC721', 'IERC1155', 'IUniswap', 'IAave', 
+            'ICompound', 'ICurve', 'IBalancer', 'ISynthetix', 'IMaker', 'IYearn', 'IConvex',
+            'ILido', 'IRocket', 'IChainlink', 'IBancor'
+        ];
+        
+        for (const pattern of interfaceLikePatterns) {
+            if (name.startsWith(pattern)) return true;
+        }
+        
+        return false;
     }
 
     /**

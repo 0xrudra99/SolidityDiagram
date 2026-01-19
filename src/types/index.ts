@@ -104,12 +104,27 @@ export interface TypeReference {
 export interface ContractInfo {
     name: string;
     kind: 'contract' | 'interface' | 'library' | 'abstract';
+    baseContracts: string[];  // Names of inherited contracts/interfaces (is X, Y, Z)
     functions: FunctionInfo[];
     structs: StructInfo[];
     enums: EnumInfo[];
     stateVariables: StateVariableInfo[];
     location: SourceLocation;
     filePath: string;
+}
+
+/**
+ * Represents a resolved implementation of an interface method
+ */
+export interface ImplementationInfo {
+    contractName: string;
+    contractKind: 'contract' | 'interface' | 'library' | 'abstract';
+    functionInfo: FunctionInfo;
+    filePath: string;
+    /** Whether this is a direct implementation or inherited */
+    isInherited: boolean;
+    /** The inheritance chain (e.g., ["MyToken", "ERC20", "IERC20"]) */
+    inheritanceChain: string[];
 }
 
 /**
@@ -188,9 +203,11 @@ export interface ArrowData {
 export interface ImportRequest {
     command: 'importRequest';
     name: string;
-    kind: 'function' | 'struct' | 'enum' | 'statevar';
+    kind: 'function' | 'struct' | 'enum' | 'statevar' | 'implementation';
     sourceBlockId: string;
     sourceLine: number;
+    /** For implementation requests: the interface name (e.g., "IERC20") */
+    interfaceName?: string;
 }
 
 /**

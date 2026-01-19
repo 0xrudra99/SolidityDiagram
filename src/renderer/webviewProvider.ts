@@ -4,6 +4,7 @@ import { DiagramGenerator } from './diagramGenerator';
 import { TypeResolver } from '../analyzer/typeResolver';
 import { CallGraphBuilder } from '../analyzer/callGraphBuilder';
 import { StateVariableResolver } from '../analyzer/stateVariableResolver';
+import { InheritanceResolver } from '../analyzer/inheritanceResolver';
 import { SolidityParser } from '../parser/solidityParser';
 import { 
     FunctionAnalysis, 
@@ -15,7 +16,8 @@ import {
     StructInfo,
     EnumInfo,
     StateVariableInfo,
-    ContractInfo
+    ContractInfo,
+    ImplementationInfo
 } from '../types';
 
 export class SolidityDiagramProvider {
@@ -29,6 +31,7 @@ export class SolidityDiagramProvider {
     private typeResolver: TypeResolver;
     private callGraphBuilder: CallGraphBuilder;
     private stateVariableResolver: StateVariableResolver;
+    private inheritanceResolver: InheritanceResolver;
     private currentFilePath: string = '';
     private currentContractName: string = '';
     private workspaceFilesCache: Map<string, ParsedFile> = new Map();
@@ -44,6 +47,7 @@ export class SolidityDiagramProvider {
         this.typeResolver = new TypeResolver(this.parser);
         this.callGraphBuilder = new CallGraphBuilder(this.parser);
         this.stateVariableResolver = new StateVariableResolver(this.parser);
+        this.inheritanceResolver = new InheritanceResolver();
     }
 
     /**
@@ -96,6 +100,14 @@ export class SolidityDiagramProvider {
                             await this.handleImportRequest(message as ImportRequest);
                             break;
                         
+                        case 'findImplementations':
+                            await this.handleFindImplementations(message);
+                            break;
+                        
+                        case 'selectImplementation':
+                            await this.handleSelectImplementation(message);
+                            break;
+                        
                         case 'blockRemoved':
                             // Remove from displayed blocks set
                             this.displayedBlocks.delete(message.blockId);
@@ -108,6 +120,9 @@ export class SolidityDiagramProvider {
         // Store context for import resolution
         this.currentFilePath = filePath;
         this.workspaceFilesCache = await this.getWorkspaceFiles();
+        
+        // Build inheritance graph for implementation resolution
+        this.inheritanceResolver.buildInheritanceGraph(this.workspaceFilesCache);
         
         // Find the contract containing this function and extract state variable names
         const currentContract = this.stateVariableResolver.findContractForFunction(
@@ -370,6 +385,131 @@ export class SolidityDiagramProvider {
             block,
             arrows: [arrow]
         };
+    }
+
+    /**
+     * Handle finding implementations for an interface method
+     */
+    private async handleFindImplementations(message: {
+        interfaceName: string;
+        methodName: string;
+        sourceBlockId: string;
+        sourceLine: number;
+    }): Promise<void> {
+        if (!this.currentPanel) return;
+
+        // Refresh inheritance graph
+        this.workspaceFilesCache = await this.getWorkspaceFiles();
+        this.inheritanceResolver.buildInheritanceGraph(this.workspaceFilesCache);
+
+        // Find implementations
+        let implementations = this.inheritanceResolver.findImplementations(
+            message.interfaceName,
+            message.methodName
+        );
+
+        // If no implementations found via interface, try direct search
+        if (implementations.length === 0) {
+            implementations = this.inheritanceResolver.findContractsWithMethod(message.methodName);
+        }
+
+        if (implementations.length === 0) {
+            this.currentPanel.webview.postMessage({
+                command: 'implementationsResult',
+                success: false,
+                error: `No implementations found for ${message.interfaceName}.${message.methodName}`
+            });
+            return;
+        }
+
+        if (implementations.length === 1) {
+            // Single implementation - import directly
+            await this.importImplementation(
+                implementations[0],
+                message.sourceBlockId,
+                message.sourceLine
+            );
+        } else {
+            // Multiple implementations - show picker
+            this.currentPanel.webview.postMessage({
+                command: 'showImplementationPicker',
+                implementations: implementations.map(impl => ({
+                    contractName: impl.contractName,
+                    contractKind: impl.contractKind,
+                    functionName: impl.functionInfo.name,
+                    filePath: impl.filePath,
+                    line: impl.functionInfo.location.start.line,
+                    isInherited: impl.isInherited,
+                    inheritanceChain: impl.inheritanceChain,
+                    signature: this.getFunctionSignature(impl.functionInfo)
+                })),
+                sourceBlockId: message.sourceBlockId,
+                sourceLine: message.sourceLine
+            });
+        }
+    }
+
+    /**
+     * Handle selection of an implementation from the picker
+     */
+    private async handleSelectImplementation(message: {
+        contractName: string;
+        methodName: string;
+        sourceBlockId: string;
+        sourceLine: number;
+    }): Promise<void> {
+        if (!this.currentPanel) return;
+
+        // Find the specific implementation
+        const implementations = this.inheritanceResolver.findContractsWithMethod(message.methodName);
+        const selected = implementations.find(impl => impl.contractName === message.contractName);
+
+        if (selected) {
+            await this.importImplementation(selected, message.sourceBlockId, message.sourceLine);
+        }
+    }
+
+    /**
+     * Import a specific implementation into the diagram
+     */
+    private async importImplementation(
+        impl: ImplementationInfo,
+        sourceBlockId: string,
+        sourceLine: number
+    ): Promise<void> {
+        if (!this.currentPanel) return;
+
+        const blockId = `function-${impl.contractName}-${impl.functionInfo.name}`;
+        
+        const block: CodeBlockData = {
+            id: blockId,
+            title: `${impl.contractName}.${impl.functionInfo.name}`,
+            subtitle: this.getFunctionSignature(impl.functionInfo),
+            sourceCode: impl.functionInfo.fullSource,
+            category: 'function',
+            filePath: impl.filePath,
+            startLine: impl.functionInfo.location.start.line,
+            position: { x: 0, y: 0 }
+        };
+
+        const arrow: ArrowData = {
+            id: `arrow-impl-${Date.now()}`,
+            sourceBlockId,
+            sourceLine,
+            targetBlockId: blockId,
+            type: 'function',
+            label: `${impl.contractName}.${impl.functionInfo.name}`
+        };
+
+        this.displayedBlocks.add(blockId);
+
+        this.currentPanel.webview.postMessage({
+            command: 'importResponse',
+            success: true,
+            requestId: `impl-${Date.now()}`,
+            block,
+            arrows: [arrow]
+        } as ImportResponse);
     }
 
     /**

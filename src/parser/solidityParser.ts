@@ -103,6 +103,12 @@ export class SolidityParser {
         const enums: EnumInfo[] = [];
         const stateVariables: StateVariableInfo[] = [];
 
+        // Extract base contracts (inheritance: is X, Y, Z)
+        const baseContracts: string[] = (contractNode.baseContracts || []).map((base: any) => {
+            // base.baseName is the UserDefinedTypeName
+            return base.baseName?.namePath || base.baseName?.name || '';
+        }).filter((name: string) => name);
+
         for (const subNode of contractNode.subNodes || []) {
             if (subNode.type === 'FunctionDefinition') {
                 functions.push(this.processFunction(subNode, sourceCode, lines, filePath));
@@ -118,6 +124,7 @@ export class SolidityParser {
         return {
             name: contractNode.name,
             kind: contractNode.kind || 'contract',
+            baseContracts,
             functions,
             structs,
             enums,

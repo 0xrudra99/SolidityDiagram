@@ -15,6 +15,7 @@ export function generateImportManagerScript(): string {
             this.pendingImports = new Map();
             this.hintElement = null;
             this.hintTimeout = null;
+            this.pickerElement = null;
             
             this.init();
         }
@@ -70,11 +71,18 @@ export function generateImportManagerScript(): string {
                 const message = e.data;
                 if (message.command === 'importResponse') {
                     this.handleImportResponse(message);
+                } else if (message.command === 'showImplementationPicker') {
+                    this.showImplementationPicker(message);
+                } else if (message.command === 'implementationsResult') {
+                    this.handleImplementationsResult(message);
                 }
             });
 
             // Create hint element
             this.createHintElement();
+            
+            // Create implementation picker
+            this.createImplementationPicker();
         }
 
         createHintElement() {
@@ -82,6 +90,103 @@ export function generateImportManagerScript(): string {
             this.hintElement.className = 'import-hint';
             this.hintElement.innerHTML = '<kbd>⌘</kbd> Click to import';
             document.body.appendChild(this.hintElement);
+        }
+
+        createImplementationPicker() {
+            this.pickerElement = document.createElement('div');
+            this.pickerElement.className = 'implementation-picker';
+            this.pickerElement.innerHTML = \`
+                <div class="picker-header">
+                    <span class="picker-title">Select Implementation</span>
+                    <button class="picker-close">&times;</button>
+                </div>
+                <div class="picker-body"></div>
+            \`;
+            document.body.appendChild(this.pickerElement);
+            
+            // Close button handler
+            this.pickerElement.querySelector('.picker-close').addEventListener('click', () => {
+                this.hideImplementationPicker();
+            });
+            
+            // Close on escape
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && this.pickerElement.classList.contains('visible')) {
+                    this.hideImplementationPicker();
+                }
+            });
+            
+            // Close on click outside
+            document.addEventListener('click', (e) => {
+                if (this.pickerElement.classList.contains('visible') && 
+                    !this.pickerElement.contains(e.target) &&
+                    !e.target.closest('.importable-token')) {
+                    this.hideImplementationPicker();
+                }
+            });
+        }
+
+        showImplementationPicker(message) {
+            const body = this.pickerElement.querySelector('.picker-body');
+            body.innerHTML = '';
+            
+            // Store context for selection
+            this.pickerContext = {
+                sourceBlockId: message.sourceBlockId,
+                sourceLine: message.sourceLine
+            };
+            
+            for (const impl of message.implementations) {
+                const item = document.createElement('div');
+                item.className = 'picker-item';
+                item.innerHTML = \`
+                    <div class="picker-item-main">
+                        <span class="picker-item-contract">\${impl.contractName}</span>
+                        <span class="picker-item-kind \${impl.contractKind}">\${impl.contractKind}</span>
+                    </div>
+                    <div class="picker-item-details">
+                        <span class="picker-item-signature">\${impl.functionName}\${impl.signature}</span>
+                        \${impl.isInherited ? '<span class="picker-item-inherited">inherited</span>' : ''}
+                    </div>
+                    <div class="picker-item-path">\${impl.filePath.split('/').pop()}:\${impl.line}</div>
+                \`;
+                
+                item.addEventListener('click', () => {
+                    this.selectImplementation(impl);
+                });
+                
+                body.appendChild(item);
+            }
+            
+            // Position near center of viewport
+            this.pickerElement.style.left = '50%';
+            this.pickerElement.style.top = '50%';
+            this.pickerElement.style.transform = 'translate(-50%, -50%)';
+            this.pickerElement.classList.add('visible');
+        }
+
+        hideImplementationPicker() {
+            this.pickerElement.classList.remove('visible');
+            this.pickerContext = null;
+        }
+
+        selectImplementation(impl) {
+            this.hideImplementationPicker();
+            
+            vscode.postMessage({
+                command: 'selectImplementation',
+                contractName: impl.contractName,
+                methodName: impl.functionName,
+                sourceBlockId: this.pickerContext?.sourceBlockId,
+                sourceLine: this.pickerContext?.sourceLine
+            });
+        }
+
+        handleImplementationsResult(message) {
+            if (!message.success) {
+                // Show error briefly
+                console.warn('Implementation search failed:', message.error);
+            }
         }
 
         showImportHint(token) {
@@ -107,9 +212,26 @@ export function generateImportManagerScript(): string {
 
         requestImport(token) {
             const name = token.dataset.name;
-            const importType = token.dataset.importable; // 'function', 'type', or 'statevar'
+            const importType = token.dataset.importable; // 'function', 'type', 'statevar', or 'interface-call'
             const line = parseInt(token.dataset.line, 10);
             const blockId = token.dataset.block;
+            const interfaceName = token.dataset.interface; // For interface calls
+
+            // Handle interface method calls - find implementations
+            if (importType === 'interface-call' && interfaceName) {
+                // Mark as loading
+                token.classList.add('loading');
+                this.pendingImports.set(\`impl-\${interfaceName}-\${name}\`, { token, sourceBlockId: blockId, sourceLine: line });
+                
+                vscode.postMessage({
+                    command: 'findImplementations',
+                    interfaceName: interfaceName,
+                    methodName: name,
+                    sourceBlockId: blockId,
+                    sourceLine: line
+                });
+                return;
+            }
 
             // Check if already displayed
             let targetId;
@@ -466,6 +588,10 @@ export function generateImportManagerScript(): string {
         highlightLine(line, lineNumber, blockId, variableTypes = new Map()) {
             if (!line.trim()) return this.escapeHtml(line);
             
+            // First, detect and mark interface calls: IERC20(token).method(...)
+            // This pre-processes the line to find interface call patterns
+            const interfaceCallInfo = this.detectInterfaceCalls(line);
+            
             // Keywords
             const keywords = ['pragma', 'solidity', 'import', 'contract', 'interface', 'library', 'abstract',
                 'is', 'using', 'for', 'struct', 'enum', 'event', 'error', 'modifier',
@@ -523,6 +649,22 @@ export function generateImportManagerScript(): string {
                     let j = i;
                     while (j < line.length && /[a-zA-Z0-9_]/.test(line[j])) j++;
                     const word = line.substring(i, j);
+                    
+                    // Check if this is part of an interface call pattern
+                    const interfaceCallMatch = interfaceCallInfo.find(
+                        ic => ic.methodPos === i && ic.methodName === word
+                    );
+                    
+                    if (interfaceCallMatch) {
+                        // This is an interface method call - make it importable with interface info
+                        result += \`<span class="token-function interface-call importable-token" \` +
+                            \`data-importable="interface-call" data-name="\${word}" \` +
+                            \`data-interface="\${interfaceCallMatch.interfaceName}" \` +
+                            \`data-line="\${lineNumber}" data-block="\${blockId}">\` +
+                            \`\${word}</span>\`;
+                        i = j;
+                        continue;
+                    }
                     
                     if (keywords.includes(word)) {
                         result += \`<span class="token-keyword">\${word}</span>\`;
@@ -590,6 +732,62 @@ export function generateImportManagerScript(): string {
             }
             
             return result;
+        }
+
+        /**
+         * Detect interface call patterns in a line: InterfaceName(address).method(...)
+         * Returns array of { interfaceName, methodName, methodPos }
+         */
+        detectInterfaceCalls(line) {
+            const results = [];
+            
+            // Pattern: InterfaceName(anything).methodName(
+            // Captures: InterfaceName, methodName, and position of methodName
+            const pattern = /\\b([A-Z][a-zA-Z0-9_]*)\\s*\\([^)]*\\)\\s*\\.\\s*([a-z][a-zA-Z0-9_]*)\\s*\\(/g;
+            
+            let match;
+            while ((match = pattern.exec(line)) !== null) {
+                const interfaceName = match[1];
+                const methodName = match[2];
+                
+                // Calculate position of method name in the original line
+                // Find where methodName starts after the "."
+                const fullMatch = match[0];
+                const dotIndex = fullMatch.lastIndexOf('.');
+                const afterDot = fullMatch.substring(dotIndex + 1);
+                const methodStartInMatch = afterDot.indexOf(methodName);
+                const methodPos = match.index + dotIndex + 1 + methodStartInMatch;
+                
+                // Only count if it looks like an interface (starts with I or known interface patterns)
+                if (this.looksLikeInterface(interfaceName)) {
+                    results.push({
+                        interfaceName,
+                        methodName,
+                        methodPos
+                    });
+                }
+            }
+            
+            return results;
+        }
+
+        /**
+         * Check if a type name looks like an interface
+         */
+        looksLikeInterface(name) {
+            // Common interface prefixes
+            if (/^I[A-Z]/.test(name)) return true;
+            
+            // Known interface-like patterns
+            const interfaceLikePatterns = ['IERC20', 'IERC721', 'IERC1155', 'IUniswap', 'IAave', 
+                'ICompound', 'ICurve', 'IBalancer', 'ISynthetix', 'IMaker', 'IYearn', 'IConvex',
+                'ILido', 'IRocket', 'IChainlink', 'IBancor'];
+            
+            for (const pattern of interfaceLikePatterns) {
+                if (name.startsWith(pattern)) return true;
+            }
+            
+            return false;
         }
 
         isBuiltInFunction(name) {
