@@ -12,7 +12,9 @@
     "Programming Languages"
   ],
   "activationEvents": [
-    "onLanguage:solidity"
+    "onLanguage:solidity",
+    "onCommand:solidity-diagram.generateDiagram",
+    "workspaceContains:**/*.sol"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -26,7 +28,7 @@
       "editor/context": [
         {
           "command": "solidity-diagram.generateDiagram",
-          "when": "editorLangId == solidity",
+          "when": "editorLangId == solidity || resourceExtname == .sol",
           "group": "navigation"
         }
       ]

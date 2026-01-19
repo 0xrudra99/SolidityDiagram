@@ -20,8 +20,11 @@ export function activate(context: vscode.ExtensionContext) {
             }
 
             const document = editor.document;
-            if (document.languageId !== 'solidity') {
-                vscode.window.showErrorMessage('This command only works with Solidity files');
+            // Check for solidity language ID or .sol file extension
+            const isSolidity = document.languageId === 'solidity' || 
+                               document.fileName.endsWith('.sol');
+            if (!isSolidity) {
+                vscode.window.showErrorMessage('This command only works with Solidity files (.sol)');
                 return;
             }
 
