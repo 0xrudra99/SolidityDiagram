@@ -94,8 +94,15 @@ export function generateDataFlowVisualizerScript(): string {
 
     /**
      * Handle click on a flow variable (locks the visualization)
+     * NOTE: If Cmd/Ctrl is held, let the event propagate for import handling
      */
     function handleClick(e) {
+        // If Cmd (Mac) or Ctrl (Windows/Linux) is held, this is an import action
+        // Let it propagate to the import manager instead
+        if (e.metaKey || e.ctrlKey) {
+            return; // Don't stop propagation, let import manager handle it
+        }
+        
         e.stopPropagation();
         
         const varName = e.target.dataset.var;
