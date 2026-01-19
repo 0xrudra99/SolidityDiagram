@@ -2,7 +2,7 @@
 
 A powerful VS Code extension for visualizing and analyzing Solidity smart contracts. Generate interactive, Miro-style diagrams that help you understand complex DeFi protocols by showing function dependencies, data structures, data flow, and call graphs.
 
-![Function Diagram Example](screenshot/Screenshot%202026-01-19%20at%206.17.47%20PM.png)
+![Function Diagram Example](screenshot/ss.png)
 
 ## ✨ Key Features
 
@@ -233,4 +233,3 @@ For bugs and feature requests, please open an issue on the repository.
 
 ---
 
-**Made for auditors, by auditors** 🔐
