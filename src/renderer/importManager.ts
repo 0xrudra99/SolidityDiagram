@@ -6,7 +6,7 @@
 /**
  * Generates the JavaScript code for the import manager to be injected into the webview
  */
-export function generateImportManagerScript(): string {
+export function generateImportManagerScript(isDashboardMode: boolean = false): string {
     return `
     // ============ Import Manager ============
     class ImportManager {
@@ -22,9 +22,7 @@ export function generateImportManagerScript(): string {
 
         init() {
             // Collect initially displayed blocks
-            document.querySelectorAll('.code-block-wrapper').forEach(block => {
-                this.displayedBlocks.add(block.id);
-            });
+            this.refreshDisplayedBlocks();
 
             // Cmd+Click handler for importing
             document.addEventListener('click', (e) => {
@@ -66,7 +64,7 @@ export function generateImportManagerScript(): string {
                 }
             });
 
-            // Listen for import responses from extension
+            // Listen for import responses and dashboard messages from extension
             window.addEventListener('message', (e) => {
                 const message = e.data;
                 if (message.command === 'importResponse') {
@@ -75,6 +73,12 @@ export function generateImportManagerScript(): string {
                     this.showImplementationPicker(message);
                 } else if (message.command === 'implementationsResult') {
                     this.handleImplementationsResult(message);
+                } else if (message.command === 'addBlocks') {
+                    this.handleAddBlocks(message);
+                } else if (message.command === 'loadDashboard') {
+                    this.handleLoadDashboard(message);
+                } else if (message.command === 'clearDashboard') {
+                    this.handleClearDashboard();
                 }
             });
 
@@ -83,6 +87,16 @@ export function generateImportManagerScript(): string {
             
             // Create implementation picker
             this.createImplementationPicker();
+        }
+
+        /**
+         * Refresh the displayedBlocks set from the current DOM state
+         */
+        refreshDisplayedBlocks() {
+            this.displayedBlocks.clear();
+            document.querySelectorAll('.code-block-wrapper').forEach(block => {
+                this.displayedBlocks.add(block.id);
+            });
         }
 
         createHintElement() {
@@ -243,6 +257,14 @@ export function generateImportManagerScript(): string {
             const blockId = token.dataset.block;
             const interfaceName = token.dataset.interface; // For interface calls
 
+            // Debug logging
+            console.log('[ImportManager] Import requested:', { name, importType, blockId, line, interfaceName });
+
+            if (!name || !importType) {
+                console.warn('[ImportManager] Missing name or importType in token data');
+                return;
+            }
+
             // Handle interface method calls - find implementations
             if (importType === 'interface-call' && interfaceName) {
                 // Mark as loading
@@ -372,6 +394,8 @@ export function generateImportManagerScript(): string {
         addBlock(blockData, sourceBlockId) {
             const content = document.getElementById('canvas-content');
             if (!content) return;
+
+            console.log('[ImportManager] Adding block:', blockData.id, 'Current displayedBlocks:', Array.from(this.displayedBlocks));
 
             // Calculate position near the source block
             const position = this.calculateBlockPosition(blockData, sourceBlockId);
@@ -684,60 +708,66 @@ export function generateImportManagerScript(): string {
                     if (interfaceCallMatch) {
                         // This is an interface method call - make it importable with interface info
                         result += \`<span class="token-function interface-call importable-token" \` +
-                            \`data-importable="interface-call" data-name="\${word}" \` +
-                            \`data-interface="\${interfaceCallMatch.interfaceName}" \` +
+                            \`data-importable="interface-call" data-name="\${this.escapeHtml(word)}" \` +
+                            \`data-interface="\${this.escapeHtml(interfaceCallMatch.interfaceName)}" \` +
                             \`data-line="\${lineNumber}" data-block="\${blockId}">\` +
-                            \`\${word}</span>\`;
+                            \`\${this.escapeHtml(word)}</span>\`;
                         i = j;
                         continue;
                     }
                     
+                    const escapedWord = this.escapeHtml(word);
+
                     if (keywords.includes(word)) {
-                        result += \`<span class="token-keyword">\${word}</span>\`;
+                        result += \`<span class="token-keyword">\${escapedWord}</span>\`;
                     } else if (types.includes(word)) {
-                        result += \`<span class="token-type">\${word}</span>\`;
+                        result += \`<span class="token-type">\${escapedWord}</span>\`;
                     } else if (modifiers.includes(word)) {
-                        result += \`<span class="token-modifier">\${word}</span>\`;
+                        result += \`<span class="token-modifier">\${escapedWord}</span>\`;
                     } else if (line[j] === '(') {
                         // Function call - make it importable
-                        const isImportable = !this.displayedBlocks.has(\`function-\${word}\`) && 
-                            !this.isBuiltInFunction(word);
+                        // Also check for function-ContractName-funcName pattern used by implementations
+                        const isDisplayed = this.displayedBlocks.has(\`function-\${word}\`) ||
+                            Array.from(this.displayedBlocks).some(id => id.endsWith(\`-\${word}\`) && id.startsWith('function-'));
+                        const isImportable = !isDisplayed && !this.isBuiltInFunction(word);
                         if (isImportable) {
                             result += \`<span class="token-function importable-token" \` +
-                                \`data-importable="function" data-name="\${word}" \` +
+                                \`data-importable="function" data-name="\${escapedWord}" \` +
                                 \`data-line="\${lineNumber}" data-block="\${blockId}">\` +
-                                \`\${word}</span>\`;
+                                \`\${escapedWord}</span>\`;
                         } else {
-                            result += \`<span class="token-function">\${word}</span>\`;
+                            result += \`<span class="token-function">\${escapedWord}</span>\`;
                         }
                     } else if (word[0] === word[0].toUpperCase() && word[0] !== '_') {
                         // Type - make it importable
-                        const isImportable = !this.displayedBlocks.has(\`struct-\${word}\`) && 
-                            !this.displayedBlocks.has(\`enum-\${word}\`) &&
-                            !this.isBuiltInType(word);
+                        const hasStruct = this.displayedBlocks.has(\`struct-\${word}\`);
+                        const hasEnum = this.displayedBlocks.has(\`enum-\${word}\`);
+                        const isBuiltIn = this.isBuiltInType(word);
+                        const isImportable = !hasStruct && !hasEnum && !isBuiltIn;
+
                         if (isImportable) {
                             result += \`<span class="token-type importable-token" \` +
-                                \`data-importable="type" data-name="\${word}" \` +
+                                \`data-importable="type" data-name="\${escapedWord}" \` +
                                 \`data-line="\${lineNumber}" data-block="\${blockId}">\` +
-                                \`\${word}</span>\`;
+                                \`\${escapedWord}</span>\`;
                         } else {
-                            result += \`<span class="token-type">\${word}</span>\`;
+                            result += \`<span class="token-type">\${escapedWord}</span>\`;
                         }
                     } else {
                         // Check if this variable has a known struct/enum type
                         const varType = variableTypes.get(word);
-                        const isImportableVar = varType && 
+                        const isImportableVar = varType &&
                             !this.displayedBlocks.has(\`struct-\${varType}\`) &&
                             !this.displayedBlocks.has(\`enum-\${varType}\`) &&
                             !this.isBuiltInType(varType);
-                        
+
                         if (isImportableVar) {
                             result += \`<span class="token-variable importable-token" \` +
-                                \`data-importable="type" data-name="\${varType}" \` +
+                                \`data-importable="type" data-name="\${this.escapeHtml(varType)}" \` +
                                 \`data-line="\${lineNumber}" data-block="\${blockId}">\` +
-                                \`\${word}</span>\`;
+                                \`\${escapedWord}</span>\`;
                         } else {
-                            result += \`<span class="token-variable">\${word}</span>\`;
+                            result += \`<span class="token-variable">\${escapedWord}</span>\`;
                         }
                     }
                     i = j;
@@ -918,8 +948,9 @@ export function generateImportManagerScript(): string {
             
             const blockId = block.id;
             
-            // Don't allow removing the main function
-            if (block.classList.contains('block-main')) {
+            // In dashboard mode, allow removing all blocks
+            // In single-function mode, don't allow removing the main function
+            if (!isDashboardMode && block.classList.contains('block-main')) {
                 return;
             }
             
@@ -940,6 +971,11 @@ export function generateImportManagerScript(): string {
                 blockId: blockId
             });
             
+            // Trigger state save in dashboard mode
+            if (isDashboardMode) {
+                this.saveDashboardState();
+            }
+            
             // Remove from DOM after animation
             setTimeout(() => {
                 block.remove();
@@ -949,6 +985,31 @@ export function generateImportManagerScript(): string {
                     updateAllArrows();
                 }
             }, 200);
+        }
+
+        saveDashboardState() {
+            if (!isDashboardMode) return;
+            
+            // Collect all block positions
+            const blocks = document.querySelectorAll('.code-block-wrapper');
+            const positions = {};
+            
+            blocks.forEach(block => {
+                const x = parseFloat(block.dataset.x) || 0;
+                const y = parseFloat(block.dataset.y) || 0;
+                positions[block.id] = { x, y };
+            });
+            
+            // Get canvas transform
+            const transform = canvasController ? canvasController.getTransform() : { x: 0, y: 0, scale: 1 };
+            
+            vscode.postMessage({
+                command: 'saveDashboardState',
+                state: {
+                    blockPositions: positions,
+                    canvasTransform: transform
+                }
+            });
         }
 
         highlightExistingBlock(blockId) {
@@ -984,6 +1045,148 @@ export function generateImportManagerScript(): string {
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
+        }
+
+        /**
+         * Handle addBlocks message from extension (dashboard mode)
+         */
+        handleAddBlocks(message) {
+            if (!message.blocks || !Array.isArray(message.blocks)) return;
+
+            const content = document.getElementById('canvas-content');
+            if (!content) return;
+
+            // Add each block
+            for (const blockData of message.blocks) {
+                // Calculate position if needed
+                const position = blockData.position.x === 0 && blockData.position.y === 0
+                    ? this.calculateBlockPosition(blockData, null)
+                    : blockData.position;
+
+                // Create block element
+                const blockHtml = this.createBlockHtml(blockData, position);
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = blockHtml;
+                const blockElement = tempDiv.firstElementChild;
+
+                if (blockElement) {
+                    blockElement.classList.add('appearing');
+                    content.appendChild(blockElement);
+
+                    // Track the new block
+                    this.displayedBlocks.add(blockData.id);
+
+                    // Update draggable manager
+                    if (typeof draggableManager !== 'undefined' && draggableManager) {
+                        draggableManager.setBlockPosition(blockData.id, position.x, position.y);
+                    }
+
+                    setTimeout(() => {
+                        blockElement.classList.remove('appearing');
+                    }, 300);
+                }
+            }
+
+            // Add arrows
+            if (message.arrows && Array.isArray(message.arrows)) {
+                setTimeout(() => {
+                    for (const arrow of message.arrows) {
+                        if (typeof arrowManager !== 'undefined' && arrowManager) {
+                            arrowManager.addArrow(arrow);
+                        }
+                    }
+                    if (typeof updateAllArrows === 'function') {
+                        updateAllArrows();
+                    }
+                }, 100);
+            }
+
+            // Fit to view after adding blocks
+            setTimeout(() => {
+                if (canvasController) {
+                    canvasController.fitToView();
+                }
+            }, 500);
+        }
+
+        /**
+         * Handle loadDashboard message from extension (dashboard mode)
+         */
+        handleLoadDashboard(message) {
+            if (!message.state) return;
+
+            const content = document.getElementById('canvas-content');
+            if (!content) return;
+
+            const state = message.state;
+
+            // Load blocks
+            if (state.blocks && Array.isArray(state.blocks)) {
+                for (const blockData of state.blocks) {
+                    const blockHtml = this.createBlockHtml(blockData, blockData.position);
+                    const tempDiv = document.createElement('div');
+                    tempDiv.innerHTML = blockHtml;
+                    const blockElement = tempDiv.firstElementChild;
+
+                    if (blockElement) {
+                        content.appendChild(blockElement);
+                        this.displayedBlocks.add(blockData.id);
+
+                        if (typeof draggableManager !== 'undefined' && draggableManager) {
+                            draggableManager.setBlockPosition(blockData.id, blockData.position.x, blockData.position.y);
+                        }
+                    }
+                }
+            }
+
+            // Load arrows
+            if (state.arrows && Array.isArray(state.arrows)) {
+                setTimeout(() => {
+                    for (const arrow of state.arrows) {
+                        if (typeof arrowManager !== 'undefined' && arrowManager) {
+                            arrowManager.addArrow(arrow);
+                        }
+                    }
+                    if (typeof updateAllArrows === 'function') {
+                        updateAllArrows();
+                    }
+                }, 100);
+            }
+
+            // Restore canvas transform
+            if (state.canvasTransform && canvasController) {
+                setTimeout(() => {
+                    canvasController.setTransform(state.canvasTransform);
+                }, 200);
+            }
+
+            // Load notes and labels (if implemented)
+            // TODO: Add notes/labels restoration when needed
+        }
+
+        /**
+         * Handle clearDashboard message from extension (dashboard mode)
+         */
+        handleClearDashboard() {
+            const content = document.getElementById('canvas-content');
+            if (!content) return;
+
+            // Remove all blocks
+            const blocks = content.querySelectorAll('.code-block-wrapper');
+            blocks.forEach(block => block.remove());
+
+            // Clear displayed blocks
+            this.displayedBlocks.clear();
+
+            // Clear arrows
+            if (typeof arrowManager !== 'undefined' && arrowManager) {
+                arrowManager.clearAllArrows();
+            }
+
+            // Reset canvas transform
+            if (canvasController) {
+                canvasController.resetView();
+            }
         }
     }
 
