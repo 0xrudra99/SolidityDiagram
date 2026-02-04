@@ -2,7 +2,7 @@
   "name": "solidity-diagram",
   "displayName": "Solidity Function Diagram",
   "description": "Generate interactive diagrams showing function dependencies, data structures, and inner function calls for Solidity code",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "publisher": "solidity-diagram",
   "repository": {
     "type": "git",
