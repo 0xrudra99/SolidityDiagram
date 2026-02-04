@@ -6,7 +6,7 @@
 /**
  * Generates the JavaScript code for the import manager to be injected into the webview
  */
-export function generateImportManagerScript(isDashboardMode: boolean = false): string {
+export function generateImportManagerScript(): string {
     return `
     // ============ Import Manager ============
     class ImportManager {
@@ -64,7 +64,7 @@ export function generateImportManagerScript(isDashboardMode: boolean = false): s
                 }
             });
 
-            // Listen for import responses and dashboard messages from extension
+            // Listen for import responses from extension
             window.addEventListener('message', (e) => {
                 const message = e.data;
                 if (message.command === 'importResponse') {
@@ -73,12 +73,6 @@ export function generateImportManagerScript(isDashboardMode: boolean = false): s
                     this.showImplementationPicker(message);
                 } else if (message.command === 'implementationsResult') {
                     this.handleImplementationsResult(message);
-                } else if (message.command === 'addBlocks') {
-                    this.handleAddBlocks(message);
-                } else if (message.command === 'loadDashboard') {
-                    this.handleLoadDashboard(message);
-                } else if (message.command === 'clearDashboard') {
-                    this.handleClearDashboard();
                 }
             });
 
@@ -945,71 +939,40 @@ export function generateImportManagerScript(isDashboardMode: boolean = false): s
 
         removeBlock(block) {
             if (!block) return;
-            
+
             const blockId = block.id;
-            
-            // In dashboard mode, allow removing all blocks
-            // In single-function mode, don't allow removing the main function
-            if (!isDashboardMode && block.classList.contains('block-main')) {
+
+            // Don't allow removing the main function
+            if (block.classList.contains('block-main')) {
                 return;
             }
-            
+
             // Animate removal
             block.classList.add('removing');
-            
+
             // Remove associated arrows
             if (typeof arrowManager !== 'undefined' && arrowManager) {
                 arrowManager.removeArrowsForBlock(blockId);
             }
-            
+
             // Remove from displayed blocks
             this.displayedBlocks.delete(blockId);
-            
+
             // Notify extension
             vscode.postMessage({
                 command: 'blockRemoved',
                 blockId: blockId
             });
-            
-            // Trigger state save in dashboard mode
-            if (isDashboardMode) {
-                this.saveDashboardState();
-            }
-            
+
             // Remove from DOM after animation
             setTimeout(() => {
                 block.remove();
-                
+
                 // Update arrows
                 if (typeof updateAllArrows === 'function') {
                     updateAllArrows();
                 }
             }, 200);
-        }
-
-        saveDashboardState() {
-            if (!isDashboardMode) return;
-            
-            // Collect all block positions
-            const blocks = document.querySelectorAll('.code-block-wrapper');
-            const positions = {};
-            
-            blocks.forEach(block => {
-                const x = parseFloat(block.dataset.x) || 0;
-                const y = parseFloat(block.dataset.y) || 0;
-                positions[block.id] = { x, y };
-            });
-            
-            // Get canvas transform
-            const transform = canvasController ? canvasController.getTransform() : { x: 0, y: 0, scale: 1 };
-            
-            vscode.postMessage({
-                command: 'saveDashboardState',
-                state: {
-                    blockPositions: positions,
-                    canvasTransform: transform
-                }
-            });
         }
 
         highlightExistingBlock(blockId) {
@@ -1047,147 +1010,6 @@ export function generateImportManagerScript(isDashboardMode: boolean = false): s
                 .replace(/'/g, '&#39;');
         }
 
-        /**
-         * Handle addBlocks message from extension (dashboard mode)
-         */
-        handleAddBlocks(message) {
-            if (!message.blocks || !Array.isArray(message.blocks)) return;
-
-            const content = document.getElementById('canvas-content');
-            if (!content) return;
-
-            // Add each block
-            for (const blockData of message.blocks) {
-                // Calculate position if needed
-                const position = blockData.position.x === 0 && blockData.position.y === 0
-                    ? this.calculateBlockPosition(blockData, null)
-                    : blockData.position;
-
-                // Create block element
-                const blockHtml = this.createBlockHtml(blockData, position);
-                const tempDiv = document.createElement('div');
-                tempDiv.innerHTML = blockHtml;
-                const blockElement = tempDiv.firstElementChild;
-
-                if (blockElement) {
-                    blockElement.classList.add('appearing');
-                    content.appendChild(blockElement);
-
-                    // Track the new block
-                    this.displayedBlocks.add(blockData.id);
-
-                    // Update draggable manager
-                    if (typeof draggableManager !== 'undefined' && draggableManager) {
-                        draggableManager.setBlockPosition(blockData.id, position.x, position.y);
-                    }
-
-                    setTimeout(() => {
-                        blockElement.classList.remove('appearing');
-                    }, 300);
-                }
-            }
-
-            // Add arrows
-            if (message.arrows && Array.isArray(message.arrows)) {
-                setTimeout(() => {
-                    for (const arrow of message.arrows) {
-                        if (typeof arrowManager !== 'undefined' && arrowManager) {
-                            arrowManager.addArrow(arrow);
-                        }
-                    }
-                    if (typeof updateAllArrows === 'function') {
-                        updateAllArrows();
-                    }
-                }, 100);
-            }
-
-            // Fit to view after adding blocks
-            setTimeout(() => {
-                if (canvasController) {
-                    canvasController.fitToView();
-                }
-            }, 500);
-        }
-
-        /**
-         * Handle loadDashboard message from extension (dashboard mode)
-         */
-        handleLoadDashboard(message) {
-            if (!message.state) return;
-
-            const content = document.getElementById('canvas-content');
-            if (!content) return;
-
-            const state = message.state;
-
-            // Load blocks
-            if (state.blocks && Array.isArray(state.blocks)) {
-                for (const blockData of state.blocks) {
-                    const blockHtml = this.createBlockHtml(blockData, blockData.position);
-                    const tempDiv = document.createElement('div');
-                    tempDiv.innerHTML = blockHtml;
-                    const blockElement = tempDiv.firstElementChild;
-
-                    if (blockElement) {
-                        content.appendChild(blockElement);
-                        this.displayedBlocks.add(blockData.id);
-
-                        if (typeof draggableManager !== 'undefined' && draggableManager) {
-                            draggableManager.setBlockPosition(blockData.id, blockData.position.x, blockData.position.y);
-                        }
-                    }
-                }
-            }
-
-            // Load arrows
-            if (state.arrows && Array.isArray(state.arrows)) {
-                setTimeout(() => {
-                    for (const arrow of state.arrows) {
-                        if (typeof arrowManager !== 'undefined' && arrowManager) {
-                            arrowManager.addArrow(arrow);
-                        }
-                    }
-                    if (typeof updateAllArrows === 'function') {
-                        updateAllArrows();
-                    }
-                }, 100);
-            }
-
-            // Restore canvas transform
-            if (state.canvasTransform && canvasController) {
-                setTimeout(() => {
-                    canvasController.setTransform(state.canvasTransform);
-                }, 200);
-            }
-
-            // Load notes and labels (if implemented)
-            // TODO: Add notes/labels restoration when needed
-        }
-
-        /**
-         * Handle clearDashboard message from extension (dashboard mode)
-         */
-        handleClearDashboard() {
-            const content = document.getElementById('canvas-content');
-            if (!content) return;
-
-            // Remove all blocks
-            const blocks = content.querySelectorAll('.code-block-wrapper');
-            blocks.forEach(block => block.remove());
-
-            // Clear displayed blocks
-            this.displayedBlocks.clear();
-
-            // Clear arrows
-            if (typeof arrowManager !== 'undefined' && arrowManager) {
-                arrowManager.clearAllArrows();
-            }
-
-            // Reset canvas transform
-            if (canvasController) {
-                canvasController.resetView();
-            }
-        }
     }
 
     // Initialize import manager
