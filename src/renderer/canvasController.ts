@@ -107,6 +107,24 @@ export function generateCanvasControllerScript(config: Partial<CanvasConfig> = {
         }
 
         handleWheel(e) {
+            // Check if scrolling inside a code block
+            const codeBlock = e.target.closest('.code-block');
+            if (codeBlock) {
+                const isScrollable = codeBlock.scrollHeight > codeBlock.clientHeight;
+                if (isScrollable) {
+                    const atTop = codeBlock.scrollTop <= 0;
+                    const atBottom = codeBlock.scrollTop + codeBlock.clientHeight >= codeBlock.scrollHeight - 1;
+                    const scrollingUp = e.deltaY < 0;
+                    const scrollingDown = e.deltaY > 0;
+
+                    // Allow native scroll if not at boundary
+                    if ((scrollingUp && !atTop) || (scrollingDown && !atBottom)) {
+                        // Let the code block scroll naturally
+                        return;
+                    }
+                }
+            }
+
             e.preventDefault();
 
             const rect = this.canvas.getBoundingClientRect();
